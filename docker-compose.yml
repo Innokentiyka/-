@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+
+  postgres:
+    container_name: habit_postgres
+    image: postgres
+
+    env_file:
+      - track_habits/.env
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASS}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+
+    ports:
+      - "127.0.0.1:5433:5432"
+
+    volumes:
+      - track_postgres_data:/data
+
+    restart: always
+
+  adminer:
+    container_name: habit_adminer
+    image: adminer:latest
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - 8080:8080
+
+  redis:
+    container_name: habit_redis
+    image: redis:7.2-alpine
+    volumes:
+      - track_redis_data:/data
+
+    restart: always
+
+  celery_worker:
+    container_name: habit_celery
+    build: track_habits
+    env_file:
+      - track_habits/.env
+    command: bash -c 'celery -A track_habits worker --loglevel=info'
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - postgres
+    restart: always
+
+  celery_beat:
+    container_name: habit_celery_beat
+    build: track_habits
+    tty: true
+    command: celery -A track_habits beat -l INFO -S django
+    env_file:
+      - track_habits/.env
+    depends_on:
+      - redis
+      - backend
+
+
+  flower:
+    container_name: habit_flower
+    image: mher/flower:0.9.7
+    command: [ 'flower', '--broker=redis://redis:6379', '--port=5555' ]
+
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+
+    restart: always
+
+
+  backend:
+    container_name: habit_backend
+    build: track_habits
+    restart: always
+    command: bash -c "python manage.py migrate && python manage.py runserver"
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      - postgres
+    volumes:
+      - track_habit:/track_habit
+
+
+
+volumes:
+  track_postgres_data:
+  track_redis_data:
+  track_habit:
+
+
+
+
+
